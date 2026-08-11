@@ -1240,13 +1240,20 @@ h1, h2, h3 { font-family: "Fraunces", serif; letter-spacing: -0.01em; }
       </select>
       <button class="btn small" onclick="markQuestionShownToStudent()">✓ Bu öğrenciye gösterildi</button>
     </div>
-    <button onclick="closeQuestionPreview()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.4);color:#fff;padding:8px 16px;border-radius:8px;font-size:14px;font-weight:700;">✕ Kapat</button>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <button id="previewDrawToggleBtn" onclick="togglePreviewDrawMode()" title="Çizim modu (kalıcı değil, kaydedilmez)" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.4);color:#fff;padding:8px 12px;border-radius:8px;font-size:16px;font-weight:700;">✏️</button>
+      <button id="previewDrawClearBtn" onclick="clearPreviewCanvas()" title="Çizimi temizle" style="display:none;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.4);color:#fff;padding:8px 12px;border-radius:8px;font-size:16px;font-weight:700;">🧹</button>
+      <button onclick="closeQuestionPreview()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.4);color:#fff;padding:8px 16px;border-radius:8px;font-size:14px;font-weight:700;">✕ Kapat</button>
+    </div>
   </div>
   <div id="previewShownToRow" style="background:rgba(67,56,202,0.15);padding:6px 14px;font-size:11.5px;color:#fff;display:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
   <div style="flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:16px;">
-    <img id="questionPreviewImg" style="max-width:100%;max-height:100%;object-fit:contain;background:#fff;border-radius:6px;">
+    <div id="previewImgWrap" style="position:relative;max-width:100%;max-height:100%;display:inline-flex;">
+      <img id="questionPreviewImg" style="max-width:100%;max-height:100%;object-fit:contain;background:#fff;border-radius:6px;display:block;">
+      <canvas id="questionPreviewCanvas" style="position:absolute;left:0;top:0;pointer-events:none;touch-action:auto;border-radius:6px;"></canvas>
+    </div>
   </div>
-  <div style="text-align:center;color:rgba(255,255,255,0.5);font-size:11px;padding:6px 0;">← Sağa/sola kaydırarak diğer sorulara geç →</div>
+  <div style="text-align:center;color:rgba(255,255,255,0.5);font-size:11px;padding:6px 0;">← Sağa/sola kaydırarak diğer sorulara geç → · ✏️ ile çizim yapabilirsin (kaydedilmez)</div>
 </div>
 
 <div id="bulkTagOverlay" style="position:fixed;inset:0;background:rgba(20,18,15,0.75);z-index:220;display:none;align-items:center;justify-content:center;padding:16px;">
@@ -5086,9 +5093,13 @@ function makeQuestionPreviewHandler(imgSrc, poolId) {
 }
 
 function openQuestionPreview(imgSrc, poolId) {
-  document.getElementById("questionPreviewImg").src = imgSrc;
+  var img = document.getElementById("questionPreviewImg");
+  img.src = imgSrc;
   currentPreviewPoolId = poolId || null;
   populatePreviewStudentSelect();
+  setupPreviewCanvas();
+  turnOffPreviewDrawMode();
+  img.onload = resizePreviewCanvas;
 
   var shownRow = document.getElementById("previewShownToRow");
   var shownMap = computeShownToStudentsMap();
@@ -5100,6 +5111,98 @@ function openQuestionPreview(imgSrc, poolId) {
   }
 
   document.getElementById("questionPreviewOverlay").style.display = "flex";
+}
+
+var previewDrawMode = false;
+var previewDrawing = false;
+var previewLastX = 0;
+var previewLastY = 0;
+
+function setupPreviewCanvas() {
+  var canvas = document.getElementById("questionPreviewCanvas");
+  if (!canvas || canvas.dataset.setup) { return; }
+  canvas.dataset.setup = "1";
+  var ctx = canvas.getContext("2d");
+
+  function getPos(e) {
+    var rect = canvas.getBoundingClientRect();
+    var scaleX = canvas.width / rect.width;
+    var scaleY = canvas.height / rect.height;
+    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+  }
+
+  canvas.addEventListener("pointerdown", function(e) {
+    if (!previewDrawMode) { return; }
+    e.preventDefault();
+    previewDrawing = true;
+    var pos = getPos(e);
+    previewLastX = pos.x;
+    previewLastY = pos.y;
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  canvas.addEventListener("pointermove", function(e) {
+    if (!previewDrawMode || !previewDrawing) { return; }
+    e.preventDefault();
+    var pos = getPos(e);
+    ctx.strokeStyle = "#e0263b";
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(previewLastX, previewLastY);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+    previewLastX = pos.x;
+    previewLastY = pos.y;
+  });
+  canvas.addEventListener("pointerup", function() { previewDrawing = false; });
+  canvas.addEventListener("pointercancel", function() { previewDrawing = false; });
+  canvas.addEventListener("pointerleave", function() { previewDrawing = false; });
+
+  window.addEventListener("resize", function() {
+    if (document.getElementById("questionPreviewOverlay").style.display !== "none") { resizePreviewCanvas(); }
+  });
+}
+
+function resizePreviewCanvas() {
+  var img = document.getElementById("questionPreviewImg");
+  var canvas = document.getElementById("questionPreviewCanvas");
+  if (!img || !canvas) { return; }
+  canvas.style.width = img.offsetWidth + "px";
+  canvas.style.height = img.offsetHeight + "px";
+  canvas.width = img.offsetWidth;
+  canvas.height = img.offsetHeight;
+}
+
+function clearPreviewCanvas() {
+  var canvas = document.getElementById("questionPreviewCanvas");
+  if (!canvas) { return; }
+  var ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function turnOffPreviewDrawMode() {
+  previewDrawMode = false;
+  var canvas = document.getElementById("questionPreviewCanvas");
+  var btn = document.getElementById("previewDrawToggleBtn");
+  var clearBtn = document.getElementById("previewDrawClearBtn");
+  if (canvas) { canvas.style.pointerEvents = "none"; canvas.style.touchAction = "auto"; }
+  if (btn) { btn.style.background = "rgba(255,255,255,0.15)"; }
+  if (clearBtn) { clearBtn.style.display = "none"; }
+  clearPreviewCanvas();
+}
+
+function togglePreviewDrawMode() {
+  previewDrawMode = !previewDrawMode;
+  var canvas = document.getElementById("questionPreviewCanvas");
+  var btn = document.getElementById("previewDrawToggleBtn");
+  var clearBtn = document.getElementById("previewDrawClearBtn");
+  if (canvas) {
+    canvas.style.pointerEvents = previewDrawMode ? "auto" : "none";
+    canvas.style.touchAction = previewDrawMode ? "none" : "auto";
+  }
+  if (btn) { btn.style.background = previewDrawMode ? "rgba(224,38,59,0.85)" : "rgba(255,255,255,0.15)"; }
+  if (clearBtn) { clearBtn.style.display = previewDrawMode ? "inline-block" : "none"; }
 }
 
 function findCurrentPreviewIndex() {
@@ -5128,11 +5231,13 @@ function setupPreviewSwipe() {
   var startX = 0;
   var startY = 0;
   overlay.addEventListener("touchstart", function(e) {
+    if (previewDrawMode) { return; }
     if (e.touches.length !== 1) { return; }
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
   }, { passive: true });
   overlay.addEventListener("touchend", function(e) {
+    if (previewDrawMode) { return; }
     if (!e.changedTouches || e.changedTouches.length !== 1) { return; }
     var dx = e.changedTouches[0].clientX - startX;
     var dy = e.changedTouches[0].clientY - startY;
@@ -5145,6 +5250,7 @@ function setupPreviewSwipe() {
 function closeQuestionPreview() {
   document.getElementById("questionPreviewOverlay").style.display = "none";
   currentPreviewPoolId = null;
+  turnOffPreviewDrawMode();
 }
 
 function populatePreviewStudentSelect() {
@@ -7091,45 +7197,79 @@ function renderPublishedExamList() {
 
   var sorted = publishedExams.slice().sort(function(a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
 
+  var label = document.createElement("div");
+  label.style.fontSize = "12px";
+  label.style.fontWeight = "700";
+  label.style.color = "var(--ink-soft)";
+  label.style.margin = "4px 0 6px 0";
+  label.innerText = "Yayınlanan Sınavlar (" + sorted.length + ")";
+  wrap.appendChild(label);
+
+  var grid = document.createElement("div");
+  grid.style.display = "grid";
+  grid.style.gridTemplateColumns = "repeat(auto-fill, minmax(110px, 1fr))";
+  grid.style.gap = "6px";
+  grid.style.marginBottom = "10px";
+
   for (var i = 0; i < sorted.length; i++) {
     var rec = sorted[i];
     var card = document.createElement("div");
     card.className = "sectionCard";
+    card.style.margin = "0";
+    card.style.cursor = "pointer";
+    card.style.display = "flex";
+    card.style.flexDirection = "column";
+    card.style.padding = "6px";
+    card.style.aspectRatio = "1 / 1";
 
     var title = document.createElement("div");
     title.className = "stitle";
-    title.innerText = rec.title + " (" + rec.id + ")";
+    title.style.fontSize = "10.5px";
+    title.style.display = "-webkit-box";
+    title.style.webkitLineClamp = "2";
+    title.style.webkitBoxOrient = "vertical";
+    title.style.overflow = "hidden";
+    title.innerText = rec.title;
     card.appendChild(title);
 
     var meta = document.createElement("div");
-    meta.className = "srange";
-    meta.innerText = rec.questionCount + " soru";
+    meta.style.fontSize = "9px";
+    meta.style.color = "var(--ink-soft)";
+    meta.style.marginTop = "2px";
+    meta.innerText = rec.id + " · " + rec.questionCount + " soru";
     card.appendChild(meta);
+
+    var spacer = document.createElement("div");
+    spacer.style.flex = "1";
+    card.appendChild(spacer);
 
     var resultsBtn = document.createElement("button");
     resultsBtn.className = "btn secondary small";
-    resultsBtn.style.marginTop = "6px";
-    resultsBtn.innerText = "📊 Sonuçları Gör";
+    resultsBtn.style.width = "100%";
+    resultsBtn.style.padding = "4px 2px";
+    resultsBtn.style.fontSize = "9.5px";
+    resultsBtn.innerText = "📊 Sonuçlar";
     resultsBtn.onclick = makeViewResultsHandler(rec.id, rec.title);
     card.appendChild(resultsBtn);
 
-    var resultsBox = document.createElement("div");
-    resultsBox.id = "examResults_" + rec.id;
-    resultsBox.style.marginTop = "8px";
-    card.appendChild(resultsBox);
-
-    wrap.appendChild(card);
+    grid.appendChild(card);
   }
+  wrap.appendChild(grid);
+
+  var sharedResultsBox = document.createElement("div");
+  sharedResultsBox.id = "sharedExamResultsBox";
+  wrap.appendChild(sharedResultsBox);
 }
 
 function makeViewResultsHandler(code, title) {
   return function() {
-    var box = document.getElementById("examResults_" + code);
-    box.innerHTML = "Yükleniyor...";
+    var box = document.getElementById("sharedExamResultsBox");
+    box.innerHTML = "<div class='hint' style='margin-bottom:6px;'>📊 <strong>" + title + "</strong> (" + code + ") sonuçları — yükleniyor...</div>";
+    box.scrollIntoView({ behavior: "smooth", block: "nearest" });
     firestoreDb.collection("sinavlar").doc(code).collection("sonuclar").orderBy("submittedAt", "desc").get().then(function(snapshot) {
-      box.innerHTML = "";
+      box.innerHTML = "<div class='hint' style='margin-bottom:6px;'>📊 <strong>" + title + "</strong> (" + code + ") sonuçları:</div>";
       if (snapshot.empty) {
-        box.innerHTML = "<div class='hint'>Henüz kimse cevaplamamış.</div>";
+        box.innerHTML += "<div class='hint'>Henüz kimse cevaplamamış.</div>";
         return;
       }
       snapshot.forEach(function(doc) {
@@ -8661,12 +8801,57 @@ function makeArchiveReuseHandler(item) {
     if (questions.length > 0) {
       if (!confirm("Şu anki Test listesinin üzerine yazılacak (" + questions.length + " soru kaybolur). Devam edilsin mi?")) { return; }
     }
-    questions = JSON.parse(JSON.stringify(item.questionsSnapshot));
+
+    // Test geçmişindeki "questionsSnapshot" sadece özet bilgi tutar (görsel içermez).
+    // PDF'in gerçekten üretilebilmesi için soruları havuzdaki (pool) gerçek
+    // görselleriyle birlikte yeniden kurmamız gerekiyor; aksi halde PDF oluşturma
+    // arka planda hata verir ve öğrenciye "verildi" kaydı hiç oluşmaz.
+    var rebuilt = [];
+    var missingCount = 0;
+    for (var i = 0; i < item.questionsSnapshot.length; i++) {
+      var snap = item.questionsSnapshot[i];
+      var poolItem = null;
+      if (snap.poolId) {
+        for (var p = 0; p < pool.length; p++) {
+          if (pool[p].id === snap.poolId) { poolItem = pool[p]; break; }
+        }
+      }
+      if (poolItem) {
+        rebuilt.push({
+          id: "q" + Date.now() + "_" + i,
+          img: poolItem.img,
+          w: poolItem.w,
+          h: poolItem.h,
+          answer: (snap.answer !== undefined && snap.answer !== null) ? snap.answer : poolItem.answer,
+          scale: 100,
+          spaceBelow: 0,
+          groupId: null,
+          fullWidth: poolItem.fullWidth || false,
+          topic: snap.topic || poolItem.topic || "",
+          difficulty: snap.difficulty || poolItem.difficulty || "",
+          sourcePoolId: poolItem.id
+        });
+      } else {
+        missingCount = missingCount + 1;
+      }
+    }
+
+    if (rebuilt.length === 0) {
+      alert("Bu testteki sorular artık soru havuzunda bulunamıyor (silinmiş olabilir), bu yüzden test tekrar kullanılamıyor.");
+      return;
+    }
+
+    questions = rebuilt;
+    document.getElementById("testTitle").value = item.title || "";
     document.getElementById("studentNameInput").value = "";
     saveDraftToStorage();
     renderQuestionList();
     switchTab("pdf");
-    showToast("🔄 \"" + item.title + "\" testi geri yüklendi — yeni öğrenci adını yazıp PDF oluşturabilirsin");
+    if (missingCount > 0) {
+      showToast("⚠️ \"" + item.title + "\" geri yüklendi ama " + missingCount + " soru artık havuzda yok, atlandı. Yeni öğrenci adını yazıp PDF oluşturabilirsin");
+    } else {
+      showToast("🔄 \"" + item.title + "\" testi geri yüklendi — yeni öğrenci adını yazıp PDF oluşturabilirsin");
+    }
   };
 }
 
@@ -10110,7 +10295,7 @@ function generatePDF() {
     genBtn.disabled = false;
     genBtn.innerText = "📄 PDF Oluştur";
   }).catch(function(err) {
-    alert("PDF oluşturulurken hata oluştu: " + err.message);
+    alert("PDF oluşturulurken hata oluştu: " + err.message + "\n\nÖnemli: PDF üretilemediği için öğrenciye \"verildi\" kaydı da OLUŞTURULMADI.");
     genBtn.disabled = false;
     genBtn.innerText = "📄 PDF Oluştur";
   });
@@ -10160,6 +10345,11 @@ function buildSectionPDF(sectionQuestions, firstNumber, title, fileNamePrefix, p
   var headerExtra = (formatType === "deneme") ? 6 : (formatType === "yaprak" ? 3 : 0);
   var headerHFirst = (addStudentBox ? 32 : 22) + headerExtra;
   var headerHRest = 16 + headerExtra;
+  if (currentLogoDataUrl && currentLogoW > 0) {
+    // Logo sabit 18mm yükseklikte basılıyor; ayırıcı çizginin logonun
+    // altını kesmemesi için header yüksekliğinde en az bu kadar boşluk olsun.
+    headerHFirst = Math.max(headerHFirst, 18 + 8);
+  }
   var usableW = pageW - margin * 2;
   var colWidth = (usableW - (cols - 1) * colGap) / cols;
   var pageBottom = pageH - marginBottom - 8;
