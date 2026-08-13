@@ -1247,13 +1247,13 @@ h1, h2, h3 { font-family: "Fraunces", serif; letter-spacing: -0.01em; }
     </div>
   </div>
   <div id="previewShownToRow" style="background:rgba(67,56,202,0.15);padding:6px 14px;font-size:11.5px;color:#fff;display:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
-  <div style="flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:16px;">
+  <div id="previewContentArea" style="flex:1;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;padding:16px;">
     <div id="previewImgWrap" style="position:relative;max-width:100%;max-height:100%;display:inline-flex;">
       <img id="questionPreviewImg" style="max-width:100%;max-height:100%;object-fit:contain;background:#fff;border-radius:6px;display:block;">
-      <canvas id="questionPreviewCanvas" style="position:absolute;left:0;top:0;pointer-events:none;touch-action:auto;border-radius:6px;"></canvas>
     </div>
+    <canvas id="questionPreviewCanvas" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;touch-action:auto;"></canvas>
   </div>
-  <div style="text-align:center;color:rgba(255,255,255,0.5);font-size:11px;padding:6px 0;">← Sağa/sola kaydırarak diğer sorulara geç → · ✏️ ile çizim yapabilirsin (kaydedilmez)</div>
+  <div style="text-align:center;color:rgba(255,255,255,0.5);font-size:11px;padding:6px 0;">← Sağa/sola kaydırarak diğer sorulara geç → · ✏️ ile ekranın her yerine çizim yapabilirsin (kaydedilmez)</div>
 </div>
 
 <div id="bulkTagOverlay" style="position:fixed;inset:0;background:rgba(20,18,15,0.75);z-index:220;display:none;align-items:center;justify-content:center;padding:16px;">
@@ -5165,13 +5165,13 @@ function setupPreviewCanvas() {
 }
 
 function resizePreviewCanvas() {
-  var img = document.getElementById("questionPreviewImg");
+  var area = document.getElementById("previewContentArea");
   var canvas = document.getElementById("questionPreviewCanvas");
-  if (!img || !canvas) { return; }
-  canvas.style.width = img.offsetWidth + "px";
-  canvas.style.height = img.offsetHeight + "px";
-  canvas.width = img.offsetWidth;
-  canvas.height = img.offsetHeight;
+  if (!area || !canvas) { return; }
+  canvas.style.width = area.clientWidth + "px";
+  canvas.style.height = area.clientHeight + "px";
+  canvas.width = area.clientWidth;
+  canvas.height = area.clientHeight;
 }
 
 function clearPreviewCanvas() {
